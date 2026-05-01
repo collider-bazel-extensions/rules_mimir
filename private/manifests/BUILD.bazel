@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["mimir.yaml"])
+
+filegroup(
+    name = "manifest",
+    srcs = ["mimir.yaml"],
+)

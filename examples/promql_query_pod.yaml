@@ -1,0 +1,32 @@
+# A long-lived curl pod for running ad-hoc PromQL queries against Mimir
+# from inside the cluster. Useful during composition development:
+#
+#   kubectl -n query exec query -- \
+#     curl -s 'http://mimir-gateway.mimir.svc.cluster.local/prometheus/api/v1/query?query=up'
+#
+# Endpoints fronted by mimir-gateway:
+#   GET /prometheus/api/v1/query              -- instant
+#   GET /prometheus/api/v1/query_range        -- range
+#   GET /prometheus/api/v1/labels             -- list labels
+#   GET /prometheus/api/v1/label/<name>/values
+#   GET /prometheus/api/v1/series             -- series matching matchers
+#
+# With multitenancy on, add `-H 'X-Scope-OrgID: <tenant>'` to every
+# request.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: query
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: query
+  namespace: query
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      command: ['sleep', '3600']

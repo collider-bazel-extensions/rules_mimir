@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["mimir-values.yaml"])
+
+filegroup(
+    name = "mimir_values",
+    srcs = ["mimir-values.yaml"],
+)

@@ -1,0 +1,62 @@
+# OpenTelemetry Collector configured to scrape Prometheus-style targets
+# and push them to Mimir via the `prometheusremotewrite` exporter (which
+# uses the same /api/v1/push protocol Prometheus's remote_write does).
+#
+# Sketch — not exercised by v0.1's smoke. Verifies that Mimir's distributor
+# accepts traffic from any remote_write-speaking client, not just Prometheus.
+#
+# Real OTLP push (the /otlp/v1/metrics endpoint) takes OTLP-encoded
+# metrics directly. Different config block — see the Collector docs for
+# the `otlphttp` exporter pointed at http://mimir-gateway/otlp.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-config
+  namespace: otel
+data:
+  config.yaml: |
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: self
+              scrape_interval: 5s
+              static_configs:
+                - targets: ['localhost:8888']
+    exporters:
+      prometheusremotewrite:
+        endpoint: http://mimir-gateway.mimir.svc.cluster.local/api/v1/push
+        # If multitenancy is on, add:
+        # headers:
+        #   X-Scope-OrgID: my-tenant
+    service:
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          exporters: [prometheusremotewrite]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: otel
+  namespace: otel
+spec:
+  restartPolicy: Never
+  containers:
+    - name: otel
+      image: otel/opentelemetry-collector-contrib:0.117.0
+      args:
+        - --config=/etc/otel/config.yaml
+      volumeMounts:
+        - name: cfg
+          mountPath: /etc/otel
+  volumes:
+    - name: cfg
+      configMap:
+        name: otel-config

@@ -1,0 +1,176 @@
+# Render-time values for rules_mimir's pinned manifest.
+#
+# Smoke-fixture footprint: all replicas=1, filesystem storage,
+# multitenancy off, alertmanager + ruler disabled, all caches off,
+# subcharts (minio, grafana-agent-operator, rollout-operator) off.
+# Production deployments override every storage + replica + auth field.
+
+# Mimir core config — passed to the operator via a ConfigMap.
+mimir:
+  structuredConfig:
+    # Disable multitenancy so the smoke can issue plain HTTP requests
+    # without an X-Scope-OrgID header.
+    multitenancy_enabled: false
+    # Mimir validates that the "bucket" filesystem dirs (long-term blob
+    # store) don't overlap with the runtime tsdb / compactor / ruler
+    # local-data directories. Keep them in disjoint trees: /bucket-* for
+    # the storage backends, /data/* (already baked into the chart's
+    # default cmdline args) for the runtime workspace.
+    common:
+      storage:
+        backend: filesystem
+        filesystem:
+          dir: /bucket-data
+    blocks_storage:
+      backend: filesystem
+      filesystem:
+        dir: /bucket-data/blocks
+    ruler_storage:
+      backend: filesystem
+      filesystem:
+        dir: /bucket-data/ruler
+    alertmanager_storage:
+      backend: filesystem
+      filesystem:
+        dir: /bucket-data/alertmanager
+    # Mimir 3.x's flagship ingest path is Kafka. The chart's structured
+    # config defaults `ingest_storage.enabled: true` and only injects
+    # `kafka.address` when the *chart-bundled* `kafka.enabled: true`
+    # (i.e. when the chart renders its own `mimir-kafka` StatefulSet).
+    # We want neither — instead we point Mimir at an *external* Kafka
+    # supplied by rules_kafka in the smoke composition. Hence:
+    #   - `kafka.enabled: false` below (don't render mimir-kafka StS).
+    #   - `ingest_storage.kafka.address` here, hard-pointing at
+    #     `kafka.kafka.svc.cluster.local:9092` — the rules_kafka
+    #     in-cluster client Service.
+    # Distributor produces records there; ingester consumes from the
+    # same topic. Auto-create-topic is enabled by chart default
+    # (controller.overrideConfiguration in rules_kafka has the broker
+    # accept it with default.replication.factor=1 from a single-broker
+    # KRaft setup).
+    ingest_storage:
+      enabled: true
+      kafka:
+        address: kafka.kafka.svc.cluster.local:9092
+    ingester:
+      # Mimir's ingester replication_factor defaults to 3 (the chart
+      # passes it through). Distributor refuses to write unless
+      # `ceil(rf/2)` ingesters are live — with 1 ingester replica we'd
+      # get HTTP 500 "at least 2 live replicas required, could only
+      # find 1." Drop to RF=1 for the single-replica smoke fixture.
+      ring:
+        replication_factor: 1
+
+# Mimir core component replica counts — single replica everywhere.
+distributor:
+  replicas: 1
+querier:
+  replicas: 1
+query_frontend:
+  replicas: 1
+ingester:
+  replicas: 1
+  zoneAwareReplication:
+    enabled: false
+  persistentVolume:
+    enabled: false
+compactor:
+  replicas: 1
+  persistentVolume:
+    enabled: false
+store_gateway:
+  replicas: 1
+  zoneAwareReplication:
+    enabled: false
+  persistentVolume:
+    enabled: false
+gateway:
+  replicas: 1
+  # nginx 1.29 (used by the gateway image) validates the `resolver`
+  # directive's hostname at startup. The chart's default resolver is
+  # `kube-dns.kube-system.svc.cluster.local.` (a hostname); on kind we
+  # see `host not found in resolver` crashes that aren't recoverable on
+  # restart. Pinning to kube-dns's ClusterIP — stable per-cluster and
+  # the default in kind/CoreDNS-shipped clusters — bypasses the
+  # startup lookup. (10.96.0.10 is the kube-dns ClusterIP for the
+  # default cluster CIDR; if a consumer customizes `serviceSubnet`,
+  # they'll need to override this too.)
+  nginx:
+    config:
+      resolver: "10.96.0.10"
+
+# Optional components OFF for v0.1 smoke. Each is a separate code path
+# the chart includes by default.
+alertmanager:
+  enabled: false
+ruler:
+  enabled: false
+overrides_exporter:
+  enabled: false
+# Mimir 3.x removed `frontend_worker.frontend_address` — the
+# pre-scheduler "queriers connect direct to query-frontend" topology
+# is no longer supported. The query-scheduler is mandatory in the
+# read path. Disabling it makes the chart leave the structured config's
+# `scheduler_address` pointing at a non-existent service, so queries
+# pile up and the gateway returns 504. Adds one Deployment, no extra
+# storage / replicas.
+query_scheduler:
+  enabled: true
+ruler_querier:
+  enabled: false
+ruler_query_frontend:
+  enabled: false
+ruler_query_scheduler:
+  enabled: false
+
+# Caches OFF — memcached pods aren't needed for a smoke-scale install.
+chunks-cache:
+  enabled: false
+index-cache:
+  enabled: false
+metadata-cache:
+  enabled: false
+results-cache:
+  enabled: false
+
+# Kafka OFF — Mimir 6.x renders a `mimir-kafka` StatefulSet by default
+# for the experimental ingest-storage path. The classic ingester path
+# (which the smoke uses) doesn't need it. Default in chart values.yaml
+# is `enabled: true`.
+kafka:
+  enabled: false
+
+# Subcharts OFF — minio (object storage), grafana-agent-operator
+# (observability), rollout-operator (StatefulSet rollout coordinator).
+# Filesystem storage means we don't need minio; single-replica means
+# we don't need rollout coordination.
+minio:
+  enabled: false
+rollout_operator:
+  enabled: false
+metaMonitoring:
+  grafanaAgent:
+    enabled: false
+    installOperator: false
+    metrics:
+      remote:
+        url: ""
+    logs:
+      remote:
+        url: ""
+serviceMonitor:
+  enabled: false
+
+# `mimir-continuous-test` is an upstream-shipped tool that runs
+# continuous push+query traffic against Mimir. Not what we want in
+# a smoke fixture.
+continuous_test:
+  enabled: false
+
+# Sample test pods that helm chart ships under helm-test hooks.
+nginx:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi

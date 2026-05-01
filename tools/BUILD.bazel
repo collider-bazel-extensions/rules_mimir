@@ -1,0 +1,26 @@
+"""Maintainer-only render flow."""
+
+load("@rules_helm//:defs.bzl", "helm_template")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+# ---- 6.0.6 ------------------------------------------------------------------
+
+helm_template(
+    name = "render_mimir_6_0_6",
+    chart = ["@mimir_chart_6_0_6//:files"],
+    values = ["//config:mimir-values.yaml"],
+    namespace = "mimir",
+    release_name = "mimir",
+    include_crds = True,
+)
+
+sh_binary(
+    name = "render_writeback_6_0_6",
+    srcs = ["writeback.sh"],
+    data = [":render_mimir_6_0_6"],
+    args = [
+        "$(rootpath :render_mimir_6_0_6)",
+        "private/manifests/mimir.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)

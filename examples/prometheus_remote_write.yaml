@@ -1,0 +1,68 @@
+# Run a Prometheus pod inside the cluster, configured to scrape itself
+# and remote_write the resulting samples to Mimir's gateway. After this
+# is up, query the metric back via Mimir's PromQL endpoint:
+#
+#   curl 'http://mimir-gateway.mimir.svc.cluster.local/prometheus/api/v1/query?query=prometheus_build_info'
+#
+# Multitenancy is OFF in the smoke render — no X-Scope-OrgID header
+# needed. If you flip it on, add:
+#   remote_write:
+#     - url: ...
+#       headers:
+#         X-Scope-OrgID: <tenant>
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: writer
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prom-config
+  namespace: writer
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+    scrape_configs:
+      - job_name: self
+        static_configs:
+          - targets: ['localhost:9090']
+    remote_write:
+      - url: http://mimir-gateway.mimir.svc.cluster.local/api/v1/push
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: prom
+  namespace: writer
+  labels:
+    app: prom
+spec:
+  restartPolicy: Never
+  containers:
+    - name: prom
+      image: prom/prometheus:v2.55.1
+      args:
+        - --config.file=/etc/prom/prometheus.yml
+        - --storage.tsdb.path=/prom-data
+      ports:
+        - name: http
+          containerPort: 9090
+      readinessProbe:
+        httpGet:
+          path: /-/ready
+          port: 9090
+        periodSeconds: 2
+      volumeMounts:
+        - name: cfg
+          mountPath: /etc/prom
+        - name: data
+          mountPath: /prom-data
+  volumes:
+    - name: cfg
+      configMap:
+        name: prom-config
+    - name: data
+      emptyDir: {}

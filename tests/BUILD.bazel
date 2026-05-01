@@ -1,0 +1,117 @@
+"""Tests for rules_mimir.
+
+- Analysis test verifies the macro instantiates cleanly.
+- Smoke composition: kind cluster + Kafka (rules_kafka, KRaft single
+  broker) + Mimir configured for `ingest_storage` (Kafka path) +
+  a Prometheus pod that remote_writes through Mimir's gateway.
+  Smoke polls Mimir's PromQL API for the metric and asserts it
+  round-tripped — proves the *Kafka-backed* write path:
+  distributor → Kafka topic (rules_kafka) → ingester → querier →
+  query-frontend → gateway. Cross-rule composition smoke modeled
+  on rules_cloudnativepg + rules_certmanager.
+"""
+
+load("@rules_itest//:itest.bzl", "itest_service", "service_test")
+load("@rules_kafka//:defs.bzl", "kafka_health_check", "kafka_install")
+load("@rules_kind//:defs.bzl", "kind_cluster", "kind_health_check")
+load("@rules_mimir//:defs.bzl", "mimir_health_check", "mimir_install")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":analysis_tests.bzl", "mimir_install_test_suite")
+
+# ---- analysis ---------------------------------------------------------------
+
+mimir_install_test_suite(name = "mimir_install_analysis")
+
+# ---- smoke composition ------------------------------------------------------
+
+kind_cluster(name = "cluster", k8s_version = "1.32")
+kind_health_check(name = "cluster_health", cluster = ":cluster")
+itest_service(
+    name = "kind_svc",
+    exe = ":cluster",
+    health_check = ":cluster_health",
+    tags = ["manual"],
+)
+
+# 1) Kafka — rules_kafka.
+kafka_install(
+    name = "kafka_install_bin",
+    tags = ["manual"],
+)
+
+kafka_health_check(
+    name = "kafka_health_bin",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "kafka_install_wrapper",
+    srcs = ["kafka_install_wrapper.sh"],
+    data = [":kafka_install_bin"],
+)
+
+sh_binary(
+    name = "kafka_health_wrapper",
+    srcs = ["kafka_health_wrapper.sh"],
+    data = [":kafka_health_bin"],
+)
+
+itest_service(
+    name = "kafka_svc",
+    exe = ":kafka_install_wrapper",
+    deps = [":kind_svc"],
+    health_check = ":kafka_health_wrapper",
+    tags = ["manual"],
+)
+
+# 2) Mimir — depends on Kafka being up. Mimir's distributor connects
+# to the Kafka client Service `kafka.kafka.svc.cluster.local:9092` at
+# startup. If Kafka isn't ready yet, distributor exits with a
+# config-load error.
+mimir_install(
+    name = "mimir_install_bin",
+    tags = ["manual"],
+)
+
+mimir_health_check(
+    name = "mimir_health_bin",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "mimir_install_wrapper",
+    srcs = ["install_wrapper.sh"],
+    data = [":mimir_install_bin"],
+)
+
+sh_binary(
+    name = "mimir_health_wrapper",
+    srcs = ["health_wrapper.sh"],
+    data = [":mimir_health_bin"],
+)
+
+itest_service(
+    name = "mimir_svc",
+    exe = ":mimir_install_wrapper",
+    deps = [":kafka_svc"],
+    health_check = ":mimir_health_wrapper",
+    tags = ["manual"],
+)
+
+sh_test(
+    name = "smoke_test_bin",
+    srcs = ["smoke_test.sh"],
+    tags = ["manual"],
+)
+
+service_test(
+    name = "smoke_test",
+    services = [":mimir_svc"],
+    test = ":smoke_test_bin",
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+)
