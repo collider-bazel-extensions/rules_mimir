@@ -23,6 +23,7 @@ test compositions. Same shape as `rules_loki` / `rules_grafana` /
 | 12 | Cross-rule deps | `rules_kubectl` public dep. `rules_helm` + `rules_kind` + `rules_itest` + `rules_shell` + **`rules_kafka`** dev-only. No cert-manager required (Mimir has no admission webhooks). The rules_kafka dep is dev-only because v0.1 consumers can pick any Kafka — they just override `mimir.structuredConfig.ingest_storage.kafka.address`. | rules_loki + rules_cloudnativepg/rules_certmanager compose pattern |
 | 13 | Naming | snake_case rules/macros, `MixedCaseInfo` providers (none in v0.1), `UPPER_SNAKE` constants. | All siblings |
 | 14 | Update workflow | `bash tools/render_mimir.sh <chart-version>` → thin shim. | rules_loki precedent |
+| 15 | Release archive contents | `tests/` and `tools/` are `export-ignore` (`.gitattributes`): they load the dev-only `rules_itest` / `rules_kind` / `rules_kafka` / `rules_helm` / `rules_shell`, which made `@rules_mimir//...` unloadable for consumers. `REPO.bazel` `ignore_directories` was rejected: it also hides them from this repo's own `bazel test`. The dev-only `use_extension("//tools:extensions.bzl", ...)` is skipped for a non-root module. `examples/` (no BUILD files) still ships. A `git_override` clone still contains both. CI's `consumer` job (`.github/consumer/check.sh`) queries `//...` from the commit's `git archive`. | Org sweep (rules_kubectl#5) |
 
 ## Mimir-specific notes
 

@@ -49,11 +49,16 @@ Validated on Linux x86\_64 in CI.
 ## Installation
 
 ```python
-bazel_dep(name = "rules_mimir", version = "0.1.0")
+bazel_dep(name = "rules_mimir", version = "0.1.1")
 ```
 
-Bzlmod-only. Transitively pulls in
-[`rules_kubectl`](https://github.com/collider-bazel-extensions/rules_kubectl).
+Bzlmod-only. Depends on
+[`rules_kubectl`](https://github.com/collider-bazel-extensions/rules_kubectl);
+until both are in the BCR, pin each with `archive_override` or a git pin in
+your root module (rules_mimir's own `git_override` for rules_kubectl applies
+only when rules_mimir is the root).
+
+The release archive (the tag tarball, `archive/refs/tags/v0.1.1.tar.gz`) leaves out `tests/` and `tools/`, whose packages load dev-only modules (`rules_itest`, `rules_kind`, `rules_kafka`, `rules_helm`, `rules_shell`), so `bazel query @rules_mimir//...` works for consumers. A `git_override` clone still contains them; name packages instead (for example `@rules_mimir//:all`).
 
 ---
 
@@ -171,6 +176,7 @@ PRs welcome. Conventions match the sibling rule sets:
   `helm_template + sh_binary` block in `tools/BUILD.bazel`, run
   `bash tools/render_mimir.sh <new-version>`, commit.
 - `MODULE.bazel.lock` is intentionally not committed.
+- `tests/` and `tools/` are `export-ignore`d (`.gitattributes`), so they may load dev-only modules; nothing else may. CI's `consumer` job checks that the commit's `git archive` loads with `//...` for a consumer.
 
 ### Help wanted
 
