@@ -186,3 +186,11 @@ PRs welcome. Conventions match the sibling rule sets:
 - Object-storage backend smoke (compose with a `minio` or `rules_minio` fixture)
 - Alertmanager + ruler smoke (turn the components back on; route an alert)
 - HA smoke (3-replica ingesters with `zoneAwareReplication.enabled: true`)
+
+---
+
+## Requesting a new rules package
+
+Want Bazel rules for another tool or service?
+[Request a rules package](https://github.com/collider-bazel-extensions/.github/issues/new?template=request-a-rules-package.yml).
+The [organization page](https://github.com/collider-bazel-extensions) lists every package.
